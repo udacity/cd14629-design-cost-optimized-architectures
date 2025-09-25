@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EC2 Instance Monitor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .metric { display: flex; justify-content: space-between; margin: 10px 0; }
+        .slider-container { margin: 20px 0; }
+        .slider { width: 100%; height: 25px; border-radius: 5px; background: #d3d3d3; outline: none; }
+        .button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        .start-btn { background-color: #4CAF50; color: white; }
+        .stop-btn { background-color: #f44336; color: white; }
+        .cpu-display { font-size: 24px; font-weight: bold; color: #333; text-align: center; margin: 10px 0; }
+        .loading { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>EC2 Instance Monitor</h1>
+        
+        <div class="section">
+            <h2>Instance Information</h2>
+            <div id="instance-info" class="loading">Loading...</div>
+        </div>
+        
+        <div class="section">
+            <h2>Current CPU Utilization</h2>
+            <div id="cpu-utilization" class="cpu-display loading">Loading...</div>
+        </div>
+        
+        <div class="section">
+            <h2>Memory Usage</h2>
+            <div id="memory-info" class="loading">Loading...</div>
+        </div>
+        
+        <div class="section">
+            <h2>CPU Load Generator</h2>
+            <div class="slider-container">
+                <label for="cpu-slider">Target CPU Load: <span id="slider-value">0</span>%</label>
+                <input type="range" min="0" max="100" value="0" class="slider" id="cpu-slider">
+            </div>
+            <button class="button start-btn" onclick="startLoad()">Start Load</button>
+            <button class="button stop-btn" onclick="stopLoad()">Stop Load</button>
+            <div id="load-status"></div>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById('cpu-slider');
+        const sliderValue = document.getElementById('slider-value');
+        
+        slider.oninput = function() {
+            sliderValue.innerHTML = this.value;
+        }
+        
+        function updateInstanceInfo() {
+            fetch('/api/instance-info')
+                .then(response => response.json())
+                .then(data => {
+                    const instanceInfo = document.getElementById('instance-info');
+                    instanceInfo.innerHTML = `
+                        <div class="metric"><strong>Instance ID:</strong> <span>${data.metadata.instance_id}</span></div>
+                        <div class="metric"><strong>Instance Type:</strong> <span>${data.metadata.instance_type}</span></div>
+                        <div class="metric"><strong>Availability Zone:</strong> <span>${data.metadata.availability_zone}</span></div>
+                        <div class="metric"><strong>Public IP:</strong> <span>${data.metadata.public_ip}</span></div>
+                        <div class="metric"><strong>Private IP:</strong> <span>${data.metadata.private_ip}</span></div>
+                    `;
+                    
+                    document.getElementById('cpu-utilization').innerHTML = `${data.cpu_percent.toFixed(1)}%`;
+                    
+                    const memoryInfo = document.getElementById('memory-info');
+                    memoryInfo.innerHTML = `
+                        <div class="metric"><strong>Memory Usage:</strong> <span>${data.memory_percent.toFixed(1)}%</span></div>
+                        <div class="metric"><strong>Total Memory:</strong> <span>${data.memory_total} GB</span></div>
+                        <div class="metric"><strong>Used Memory:</strong> <span>${data.memory_used} GB</span></div>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Error fetching instance info:', error);
+                });
+        }
+        
+        function startLoad() {
+            const targetPercent = slider.value;
+            fetch('/api/start-load', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({percent: targetPercent})
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('load-status').innerHTML = 
+                    `<p style="color: green;">CPU load started at ${data.target_percent}%</p>`;
+            })
+            .catch(error => {
+                console.error('Error starting load:', error);
+                document.getElementById('load-status').innerHTML = 
+                    '<p style="color: red;">Error starting CPU load</p>';
+            });
+        }
+        
+        function stopLoad() {
+            fetch('/api/stop-load', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('load-status').innerHTML = 
+                    '<p style="color: orange;">CPU load stopped</p>';
+            })
+            .catch(error => {
+                console.error('Error stopping load:', error);
+            });
+        }
+        
+        // Update instance info every 5 seconds
+        updateInstanceInfo();
+        setInterval(updateInstanceInfo, 5000);
+    </script>
+</body>
+</html>
