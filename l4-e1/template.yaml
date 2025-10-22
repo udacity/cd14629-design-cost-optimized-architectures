@@ -1,0 +1,472 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  VPC with one public and one private subnet in the same AZ,
+  IGW + NAT GW with routing, DynamoDB table, CloudWatch dashboard,
+  IAM role for SSM and DynamoDB access, and an EC2 instance.
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the public subnet
+  PrivateSubnetCidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for the private subnet
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID via SSM public parameter
+
+Resources:
+  # -------------------------------
+  # Networking
+  # -------------------------------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: vpc-main }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: igw-main }]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PublicSubnetCidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: public-subnet }]
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref PrivateSubnetCidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags: [{ Key: Name, Value: private-subnet }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: public-rt }]
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: private-rt }]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  NatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags: [{ Key: Name, Value: nat-eip }]
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags: [{ Key: Name, Value: nat-gateway }]
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: NatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # -------------------------------
+  # DynamoDB
+  # -------------------------------
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: OrdersTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: OrderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: OrderId
+          KeyType: HASH
+      Tags: [{ Key: Name, Value: OrdersTable }]
+
+  # -------------------------------
+  # CloudWatch Dashboard
+  # -------------------------------
+  LabDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: LabDashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "title": "DynamoDB ConsumedWriteCapacityUnits - ${OrdersTable}",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 60,
+                "metrics": [
+                  [ "AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "${OrdersTable}" ]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "title": "NAT Gateway BytesOutToDestination - ${NatGateway}",
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 60,
+                "metrics": [
+                  [ "AWS/NATGateway", "BytesOutToDestination", "NatGatewayId", "${NatGateway}" ]
+                ]
+              }
+            }
+          ]
+        }
+        
+
+  # -------------------------------
+  # IAM Role for SSM + DynamoDB
+  # -------------------------------
+  ExerciseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: exercise-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [ ec2.amazonaws.com ] }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+      Policies:
+        - PolicyName: DynamoDBFullAccessToOrdersTable
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetItem
+                  - dynamodb:BatchWriteItem
+                Resource: !GetAtt OrdersTable.Arn
+
+  ExerciseInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref ExerciseRole ]
+
+  # -------------------------------
+  # Security group for the instance
+  # -------------------------------
+  ExerciseInstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all egress; no ingress (SSM for access)
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags: [{ Key: Name, Value: exercise-instance-sg }]
+
+  # -------------------------------
+  # Security Group for use with VPC Endpoint
+  # -------------------------------
+  VpcEpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all inbound and outbound traffic (for VPC Endpoints)
+      GroupName: vpc-ep-secgroup
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: vpc-ep-secgroup
+
+  # -------------------------------
+  # EC2 Instance (AL2023, t3.nano, no key pair)
+  # -------------------------------
+  ExerciseInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - NatGateway
+      - PublicRoute
+      - PrivateDefaultRoute
+    Properties:
+      InstanceType: t3.nano
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref ExerciseInstanceProfile
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds: [ !Ref ExerciseInstanceSG ]
+      # No key pair
+      Tags:
+      - Key: Name
+        Value: CommandHost
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+
+          # --- Basics ---
+          dnf -y update
+          dnf -y install python3 python3-pip
+
+          # --- App directory & permissions ---
+          install -d -m 0755 /opt/ddbload
+          cd /opt/ddbload
+
+          # --- Create virtual environment ---
+          python3 -m venv /opt/ddbload/venv
+          /opt/ddbload/venv/bin/pip install --upgrade pip
+          /opt/ddbload/venv/bin/pip install boto3 botocore
+
+          # --- Write the basic load generator (ddb_load.py) ---
+          cat > /opt/ddbload/ddb_load.py << 'PY'
+          import argparse, time, uuid
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          import boto3
+
+          def put_item(table, gsi=False):
+              order_id = str(uuid.uuid4())
+              item = {
+                  "OrderId": {"S": order_id},
+                  "AmountCents": {"N": "1999"},
+                  "CustomerId": {"S": str(uuid.uuid4())},
+                  "CreatedAt": {"S": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+              }
+              if gsi:
+                  item["OrderStatus"] = {"S": "NEW" if int(time.time()*1000) % 2 == 0 else "PAID"}
+              return {"PutRequest": {"Item": item}}
+
+          def run_write_load(table_name, rate, seconds, batch=25, gsi=True, region=None):
+              client = boto3.client("dynamodb", region_name=region) if region else boto3.client("dynamodb")
+              t_end = time.time() + seconds
+              interval = 1.0
+              per_sec_items = rate
+              batch_size = max(1, min(batch, 25))
+
+              print(f"Sending ~{per_sec_items} writes/sec for {seconds}s to {table_name} (batch {batch_size}) in region {region or 'default'}")
+              while time.time() < t_end:
+                  start = time.time()
+                  items = [put_item(table_name, gsi) for _ in range(per_sec_items)]
+                  chunks = [items[i:i+batch_size] for i in range(0, len(items), batch_size)]
+                  with ThreadPoolExecutor(max_workers=8) as ex:
+                      futures = [ex.submit(boto3.client("dynamodb", region_name=region).batch_write_item, RequestItems={table_name: c}) for c in chunks]
+                      for f in as_completed(futures):
+                          f.result()
+                  elapsed = time.time() - start
+                  time.sleep(max(0, interval - elapsed))
+
+          if __name__ == "__main__":
+              p = argparse.ArgumentParser(description="DynamoDB Write Load Generator")
+              p.add_argument("--table", required=True)
+              p.add_argument("--rate", type=int, default=20)
+              p.add_argument("--seconds", type=int, default=120)
+              p.add_argument("--batch", type=int, default=25)
+              p.add_argument("--no-gsi", action="store_true")
+              p.add_argument("--region", help="AWS region (e.g. ap-southeast-1)")
+              args = p.parse_args()
+              run_write_load(args.table, args.rate, args.seconds, args.batch, not args.no_gsi, args.region)
+          PY
+
+          chmod 0755 /opt/ddbload/ddb_load.py
+
+          # --- Write the endpoint-capable version (ddb-load-with-ep.py) ---
+          cat > /opt/ddbload/ddb-load-with-ep.py << 'PY'
+          #!/usr/bin/env python3
+          """
+          DynamoDB write-load generator with explicit VPC endpoint support.
+          """
+          import argparse, time, uuid
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from typing import Optional
+          from urllib.parse import urlparse
+          import boto3, botocore
+
+          def _normalize_endpoint(ep: Optional[str]) -> Optional[str]:
+              if not ep:
+                  return None
+              if "://" in ep:
+                  return ep
+              return f"https://{ep}"
+
+          def make_client(region: Optional[str], endpoint: Optional[str]):
+              kwargs = {}
+              if region:
+                  kwargs["region_name"] = region
+              ep_url = _normalize_endpoint(endpoint)
+              if ep_url:
+                  kwargs["endpoint_url"] = ep_url
+              cfg = botocore.config.Config(retries={"max_attempts": 10, "mode": "standard"})
+              kwargs["config"] = cfg
+              return boto3.client("dynamodb", **kwargs)
+
+          def put_item(table: str, gsi: bool = False):
+              order_id = str(uuid.uuid4())
+              item = {
+                  "OrderId": {"S": order_id},
+                  "AmountCents": {"N": "1999"},
+                  "CustomerId": {"S": str(uuid.uuid4())},
+                  "CreatedAt": {"S": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+              }
+              if gsi:
+                  item["OrderStatus"] = {"S": "NEW" if int(time.time()*1000)%2==0 else "PAID"}
+              return {"PutRequest": {"Item": item}}
+
+          def _retry_unprocessed(client, req, max_attempts=5, base_delay=0.05):
+              to_write = req
+              attempt = 0
+              while attempt < max_attempts and any(to_write.values()):
+                  resp = client.batch_write_item(RequestItems=to_write)
+                  unproc = resp.get("UnprocessedItems", {})
+                  to_write = {t:v for t,v in unproc.items() if v}
+                  if not to_write:
+                      return
+                  time.sleep(base_delay * (2 ** attempt))
+                  attempt += 1
+
+          def run_write_load(table, rate, seconds, batch=25, gsi=True, region=None, endpoint=None):
+              client = make_client(region, endpoint)
+              t_end = time.time() + seconds
+              interval = 1.0
+              per_sec_items = rate
+              batch_size = max(1, min(batch, 25))
+              where = _normalize_endpoint(endpoint) or region or "default"
+              print(f"Sending ~{per_sec_items} writes/sec for {seconds}s to {table} (batch {batch_size}) via {where}")
+              while time.time() < t_end:
+                  start = time.time()
+                  items = [put_item(table, gsi) for _ in range(per_sec_items)]
+                  chunks = [items[i:i+batch_size] for i in range(0, len(items), batch_size)]
+                  with ThreadPoolExecutor(max_workers=8) as ex:
+                      futures = [ex.submit(_retry_unprocessed, client, {table: chunk}) for chunk in chunks]
+                      for f in as_completed(futures):
+                          f.result()
+                  elapsed = time.time() - start
+                  time.sleep(max(0, interval - elapsed))
+
+          if __name__ == "__main__":
+              p = argparse.ArgumentParser(description="DynamoDB Write Load Generator (with VPC Endpoint support)")
+              p.add_argument("--table", required=True)
+              p.add_argument("--rate", type=int, default=20)
+              p.add_argument("--seconds", type=int, default=120)
+              p.add_argument("--batch", type=int, default=25)
+              p.add_argument("--no-gsi", action="store_true")
+              p.add_argument("--region", help="AWS region (e.g. ap-southeast-1)")
+              p.add_argument("--endpoint", help="VPC endpoint DNS or full https URL for DynamoDB")
+              args = p.parse_args()
+              run_write_load(args.table, args.rate, args.seconds, args.batch, not args.no-gsi, args.region, args.endpoint)
+          PY
+
+          chmod 0755 /opt/ddbload/ddb-load-with-ep.py
+
+          # --- Add convenience wrappers ---
+          cat > /usr/local/bin/ddb-load << 'SH'
+          #!/bin/bash
+          /opt/ddbload/venv/bin/python /opt/ddbload/ddb_load.py "$@"
+          SH
+          chmod 0755 /usr/local/bin/ddb-load
+
+          cat > /usr/local/bin/ddb-load-ep << 'SH'
+          #!/bin/bash
+          /opt/ddbload/venv/bin/python /opt/ddbload/ddb-load-with-ep.py "$@"
+          SH
+          chmod 0755 /usr/local/bin/ddb-load-ep
+
+          echo "Setup complete: run 'ddb-load' or 'ddb-load-ep' after instance boot."
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+  PublicSubnetId:
+    Value: !Ref PublicSubnet
+  PrivateSubnetId:
+    Value: !Ref PrivateSubnet
+  InternetGatewayId:
+    Value: !Ref InternetGateway
+  NatGatewayId:
+    Value: !Ref NatGateway
+  DynamoDBTableName:
+    Value: !Ref OrdersTable
+    Description: Name of the DynamoDB Orders table
+  DashboardName:
+    Value: LabDashboard
+    Description: CloudWatch dashboard created by this stack
+  ExerciseRoleArn:
+    Value: !GetAtt ExerciseRole.Arn
+    Description: ARN of the IAM Role with SSM and DynamoDB access
+  ExerciseInstanceId:
+    Value: !Ref ExerciseInstance
+    Description: Instance ID of the lab EC2 instance
+  ExerciseInstancePrivateIp:
+    Value: !GetAtt ExerciseInstance.PrivateIp
+    Description: Private IP of the lab EC2 instance% 
