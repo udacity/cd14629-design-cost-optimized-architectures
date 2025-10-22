@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo Shop — Orders</title>
+  <style>
+    :root{
+      --bg: #0f1221;
+      --panel: #171a2b;
+      --muted: #98a2b3;
+      --text: #eef2ff;
+      --primary: #7c5cff;
+      --ring: rgba(124, 92, 255, .35);
+      --ok: #16a34a;
+      --warn: #eab308;
+      --err: #ef4444;
+      --info: #3b82f6;
+      --chip: #22253a;
+      --chip-border: #2b2f48;
+      --border: #262a41;
+      --hover: #1d2140;
+      --shadow: 0 0 0 1px var(--border), 0 10px 30px rgba(0,0,0,.35);
+      --radius: 14px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b0e1b 0%,var(--bg) 100%);color:var(--text);font:500 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial}
+    .container{max-width:1200px;margin:24px auto;padding:0 20px}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    .logo{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--primary),#2dd4bf);box-shadow:var(--shadow)}
+    .title h1{margin:0;font-size:20px;font-weight:700}
+    .title p{margin:2px 0 0;color:var(--muted);font-size:13px}
+
+    .panel{background:linear-gradient(180deg,#161a2c 0%,var(--panel) 100%);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;padding:14px;border-bottom:1px solid var(--border)}
+    .toolbar .group{display:flex;gap:10px;align-items:center}
+    input[type="text"], select, input[type="date"]{
+      background:#12162a;border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;outline:none;transition:border .2s, box-shadow .2s
+    }
+    input[type="text"]:focus, select:focus, input[type="date"]:focus{box-shadow:0 0 0 3px var(--ring);border-color:var(--primary)}
+    button{appearance:none;border:1px solid var(--border);background:#151935;color:var(--text);padding:10px 12px;border-radius:10px;cursor:pointer;transition:transform .03s ease, background .15s, border .15s}
+    button:hover{background:var(--hover)}
+    button:active{transform:translateY(1px)}
+    .btn-primary{background:linear-gradient(180deg, #7c5cff, #6d4df6);border:0}
+    .btn-primary:hover{filter:brightness(1.05)}
+
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--chip-border);background:var(--chip);border-radius:999px;color:var(--muted);font-size:12px}
+    .chip b{color:var(--text)}
+
+    table{width:100%;border-collapse:separate;border-spacing:0 10px}
+    thead th{color:var(--muted);font-weight:600;text-align:left;padding:10px 12px}
+    tbody tr{background:#131732;border:1px solid var(--border)}
+    tbody td{padding:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+    tbody td:first-child{border-left:1px solid var(--border);border-top-left-radius:10px;border-bottom-left-radius:10px}
+    tbody td:last-child{border-right:1px solid var(--border);border-top-right-radius:10px;border-bottom-right-radius:10px}
+
+    .badge{padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
+    .paid{background:rgba(22,163,74,.12);color:#86efac;border:1px solid rgba(22,163,74,.35)}
+    .pending{background:rgba(234,179,8,.12);color:#fde68a;border:1px solid rgba(234,179,8,.35)}
+    .failed{background:rgba(239,68,68,.14);color:#fecaca;border:1px solid rgba(239,68,68,.35)}
+    .fulfilled{background:rgba(59,130,246,.14);color:#bfdbfe;border:1px solid rgba(59,130,246,.35)}
+    .unfulfilled{background:rgba(255,255,255,.06);color:#e5e7eb;border:1px dashed rgba(229,231,235,.25)}
+
+    .actions{display:flex;gap:8px}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;padding:14px;border-top:1px solid var(--border)}
+    .pagination{display:flex;align-items:center;gap:6px}
+
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+    /* Modal */
+    dialog{border:1px solid var(--border);background:linear-gradient(180deg,#151935,var(--panel));color:var(--text);border-radius:16px;box-shadow:var(--shadow);padding:0;width:min(920px,95vw)}
+    dialog::backdrop{background:rgba(4,6,18,.65);backdrop-filter:blur(2px)}
+    .sheet-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .sheet-body{padding:18px;display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+    @media (max-width: 900px){.sheet-body{grid-template-columns:1fr}}
+    .card{background:#10142c;border:1px solid var(--border);border-radius:12px;padding:14px}
+    .kv{display:grid;grid-template-columns:140px 1fr;gap:8px;font-size:14px}
+    .kv div{padding:6px 0;border-bottom:1px dashed #263052}
+    .kv div:last-child{border:0}
+    .items{display:grid;gap:10px}
+    .item{display:grid;grid-template-columns:1fr 80px 80px 90px;gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:10px;background:#0f1430}
+    .totals{display:grid;gap:8px}
+    .totals .row{display:flex;justify-content:space-between}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header aria-label="App header">
+      <div class="logo" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo">
+          <path d="M12 2l3.5 6 6.5.9-4.8 4.7 1.2 6.4L12 17l-6.4 3.9 1.2-6.4L2 8.9 8.5 8 12 2z" fill="white"/>
+        </svg>
+      </div>
+      <div class="title">
+        <h1>Demo Shop — Orders</h1>
+        <p>Filter, sort, search, and inspect orders. Great for live demos.</p>
+      </div>
+      <div style="margin-left:auto" class="actions">
+        <button id="exportCsv" title="Export visible orders to CSV">Export CSV</button>
+        <button class="btn-primary" id="newOrder">Create Test Order</button>
+      </div>
+    </header>
+
+    <section class="panel" aria-label="Orders panel">
+      <div class="toolbar" role="group" aria-label="Filters and actions">
+        <div class="group" style="flex:1 1 280px">
+          <label for="search" class="sr-only">Search</label>
+          <input id="search" type="text" placeholder="Search by order # or customer…" autocomplete="off" />
+        </div>
+        <div class="group">
+          <label for="status" class="sr-only">Status</label>
+          <select id="status" aria-label="Order status filter">
+            <option value="">All statuses</option>
+            <option>Paid</option>
+            <option>Pending</option>
+            <option>Failed</option>
+            <option>Fulfilled</option>
+            <option>Unfulfilled</option>
+          </select>
+        </div>
+        <div class="group">
+          <label for="from" class="sr-only">From date</label>
+          <input id="from" type="date" />
+          <span class="muted" aria-hidden="true">→</span>
+          <label for="to" class="sr-only">To date</label>
+          <input id="to" type="date" />
+        </div>
+        <div class="group">
+          <label for="sort" class="sr-only">Sort</label>
+          <select id="sort" aria-label="Sort orders">
+            <option value="date_desc">Newest first</option>
+            <option value="date_asc">Oldest first</option>
+            <option value="total_desc">Total: High → Low</option>
+            <option value="total_asc">Total: Low → High</option>
+          </select>
+        </div>
+        <div class="group">
+          <button id="clear">Clear filters</button>
+        </div>
+        <div class="group" style="margin-left:auto">
+          <span class="chip" title="Orders count"><b id="count">0</b> orders</span>
+        </div>
+      </div>
+
+      <div style="overflow:auto;padding:6px 10px 2px">
+        <table role="table" aria-label="Orders table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Payment</th>
+              <th>Fulfillment</th>
+              <th style="text-align:right">Total</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div class="footer">
+        <div class="muted" id="summary">Showing 0–0 of 0</div>
+        <div class="pagination" role="navigation" aria-label="Pagination">
+          <button id="prev">Prev</button>
+          <span class="chip"><span id="page">1</span> / <span id="pages">1</span></span>
+          <button id="next">Next</button>
+          <select id="pageSize" aria-label="Rows per page">
+            <option>5</option>
+            <option selected>10</option>
+            <option>20</option>
+            <option>50</option>
+          </select>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="sheet" aria-label="Order details">
+    <div class="sheet-header">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="chip"><b id="sheetId">#1001</b><span id="sheetStatus" class="badge fulfilled">Fulfilled</span></div>
+      </div>
+      <div class="actions">
+        <button id="markFulfilled">Mark fulfilled</button>
+        <button id="markPaid">Mark paid</button>
+        <button id="close">Close</button>
+      </div>
+    </div>
+    <div class="sheet-body">
+      <div class="card">
+        <h3 style="margin:0 0 8px">Items</h3>
+        <div class="items" id="sheetItems"></div>
+        <div class="totals" style="margin-top:12px">
+          <div class="row"><span class="muted">Subtotal</span><b id="sheetSubtotal">$0.00</b></div>
+          <div class="row"><span class="muted">Shipping</span><span id="sheetShipping">$0.00</span></div>
+          <div class="row"><span class="muted">Tax</span><span id="sheetTax">$0.00</span></div>
+          <div class="row" style="border-top:1px dashed #2b2f48;padding-top:8px"><span>Total</span><b id="sheetTotal">$0.00</b></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Customer</h3>
+        <div class="kv" id="sheetKv"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="rowTpl">
+    <tr>
+      <td><button class="link" data-open aria-label="Open order"></button></td>
+      <td data-date></td>
+      <td data-customer></td>
+      <td data-status></td>
+      <td data-payment></td>
+      <td data-fulfillment></td>
+      <td style="text-align:right" data-total></td>
+      <td>
+        <div class="actions">
+          <button data-open>View</button>
+          <button data-refund title="Simulate refund">Refund</button>
+        </div>
+      </td>
+    </tr>
+  </template>
+
+  <script>
+    // --- Demo Data ----------------------------------------------------------
+    const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const pick = (arr) => arr[rnd(0, arr.length - 1)];
+    const names = ["Olivia", "Liam", "Noah", "Emma", "Ava", "Sophia", "Mason", "James", "Isabella", "Lucas", "Amelia", "Ethan", "Mia", "Henry", "Harper"];
+    const streets = ["Willow St", "Maple Ave", "Cedar Rd", "Oak Lane", "Sunset Blvd", "Lakeview Dr", "Parkside Ave"];
+    const cities = ["Sydney", "Melbourne", "Brisbane", "Perth", "Auckland", "Wellington", "Adelaide"];
+    const itemsCatalog = [
+      {sku:"TSHIRT-BLK", name:"Essential Tee (Black)", price: 29.9},
+      {sku:"TSHIRT-WHT", name:"Essential Tee (White)", price: 29.9},
+      {sku:"HD-CLASSIC", name:"Classic Hoodie", price: 69.0},
+      {sku:"CAP-LOGO", name:"Logo Cap", price: 24.0},
+      {sku:"BAG-TOTE", name:"Canvas Tote", price: 19.0},
+      {sku:"MUG-11OZ", name:"Ceramic Mug 11oz", price: 12.0},
+      {sku:"SNEAK-01", name:"City Sneakers", price: 119.0},
+    ];
+
+    const STATUSES = ["Paid","Pending","Failed","Fulfilled","Unfulfilled"];
+
+    function makeOrder(i){
+      const id = 1000 + i;
+      const itemCount = rnd(1, 4);
+      const items = Array.from({length:itemCount}, () => {
+        const base = pick(itemsCatalog);
+        return { ...base, qty: rnd(1, 3) };
+      });
+      const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0);
+      const shipping = subtotal > 120 ? 0 : 9.9;
+      const tax = +(subtotal * 0.1).toFixed(2);
+      const total = +(subtotal + shipping + tax).toFixed(2);
+      const date = new Date();
+      date.setDate(date.getDate() - rnd(0, 60));
+      const status = pick(STATUSES);
+      const payment = pick(["Card", "PayPal", "Apple Pay", "Google Pay"]);
+      const fulfillment = pick(["Courier", "Pickup", "USPS"]);
+      const name = pick(names) + " " + String.fromCharCode(65 + rnd(0, 20)) + ".";
+      const addr = `${rnd(12, 98)} ${pick(streets)}`;
+      const city = pick(cities);
+      const email = name.toLowerCase().replace(/\s/g,'.').replace(/\.$/,'') + "@example.com";
+      return { id, date, customer: { name, email, phone:`04${rnd(1000,9999)} ${rnd(100,999)} ${rnd(100,999)}`, address: `${addr}, ${city}`, city }, status, payment, fulfillment, items, subtotal:+subtotal.toFixed(2), shipping, tax, total };
+    }
+
+    const allOrders = Array.from({length: 56}, (_, i) => makeOrder(i));
+
+    // --- State & Elements ---------------------------------------------------
+    const els = {
+      rows: document.getElementById('rows'),
+      search: document.getElementById('search'),
+      status: document.getElementById('status'),
+      from: document.getElementById('from'),
+      to: document.getElementById('to'),
+      sort: document.getElementById('sort'),
+      clear: document.getElementById('clear'),
+      count: document.getElementById('count'),
+      summary: document.getElementById('summary'),
+      page: document.getElementById('page'),
+      pages: document.getElementById('pages'),
+      prev: document.getElementById('prev'),
+      next: document.getElementById('next'),
+      pageSize: document.getElementById('pageSize'),
+      exportCsv: document.getElementById('exportCsv'),
+      newOrder: document.getElementById('newOrder'),
+      sheet: document.getElementById('sheet'),
+      sheetId: document.getElementById('sheetId'),
+      sheetStatus: document.getElementById('sheetStatus'),
+      sheetItems: document.getElementById('sheetItems'),
+      sheetSubtotal: document.getElementById('sheetSubtotal'),
+      sheetShipping: document.getElementById('sheetShipping'),
+      sheetTax: document.getElementById('sheetTax'),
+      sheetTotal: document.getElementById('sheetTotal'),
+      sheetKv: document.getElementById('sheetKv'),
+      markPaid: document.getElementById('markPaid'),
+      markFulfilled: document.getElementById('markFulfilled'),
+      close: document.getElementById('close')
+    };
+
+    const state = { page: 1, pageSize: 10, query: '', status: '', from: '', to: '', sort: 'date_desc' };
+
+    // --- Helpers ------------------------------------------------------------
+    const fmt = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
+    const dfmt = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium' });
+
+    function inRange(d){
+      const t = d.getTime();
+      const fromOk = !state.from || t >= new Date(state.from + 'T00:00:00').getTime();
+      const toOk = !state.to || t <= new Date(state.to + 'T23:59:59').getTime();
+      return fromOk && toOk;
+    }
+
+    function matches(o){
+      const q = state.query.trim().toLowerCase();
+      const hit = !q || String(o.id).includes(q) || o.customer.name.toLowerCase().includes(q) || o.customer.email.toLowerCase().includes(q);
+      const st = !state.status || o.status === state.status;
+      return hit && st && inRange(o.date);
+    }
+
+    function sortOrders(list){
+      const s = state.sort;
+      return [...list].sort((a,b)=>{
+        if(s === 'date_desc') return b.date - a.date;
+        if(s === 'date_asc') return a.date - b.date;
+        if(s === 'total_desc') return b.total - a.total;
+        if(s === 'total_asc') return a.total - b.total;
+        return 0;
+      });
+    }
+
+    function badge(text){
+      const cls = {
+        'Paid': 'badge paid',
+        'Pending': 'badge pending',
+        'Failed': 'badge failed',
+        'Fulfilled':'badge fulfilled',
+        'Unfulfilled':'badge unfulfilled',
+      }[text] || 'badge';
+      return `<span class="${cls}">${text}</span>`;
+    }
+
+    function paginate(list){
+      const total = list.length;
+      const pages = Math.max(1, Math.ceil(total / state.pageSize));
+      state.page = Math.min(state.page, pages);
+      const start = (state.page - 1) * state.pageSize;
+      const end = start + state.pageSize;
+      return { total, pages, slice: list.slice(start, end), start: start+1, end: Math.min(end, total) };
+    }
+
+    // --- Render -------------------------------------------------------------
+    function render(){
+      const filtered = allOrders.filter(matches);
+      const sorted = sortOrders(filtered);
+      const { total, pages, slice, start, end } = paginate(sorted);
+
+      els.rows.innerHTML = '';
+      const tpl = document.getElementById('rowTpl');
+      slice.forEach(o => {
+        const tr = tpl.content.firstElementChild.cloneNode(true);
+        const openBtns = tr.querySelectorAll('[data-open]');
+        openBtns.forEach(b => { b.textContent = `#${o.id}`; b.addEventListener('click', () => openOrder(o)); });
+        tr.querySelector('[data-date]').textContent = dfmt.format(o.date);
+        tr.querySelector('[data-customer]').textContent = o.customer.name;
+        tr.querySelector('[data-status]').innerHTML = badge(o.status);
+        tr.querySelector('[data-payment]').textContent = o.payment;
+        tr.querySelector('[data-fulfillment]').textContent = o.fulfillment;
+        tr.querySelector('[data-total]').textContent = fmt.format(o.total);
+        tr.querySelector('[data-refund]').addEventListener('click', () => alert(`Refund simulated for #${o.id}`));
+        els.rows.appendChild(tr);
+      });
+
+      els.count.textContent = total;
+      els.summary.textContent = total ? `Showing ${start}–${end} of ${total}` : 'No matching orders';
+      els.page.textContent = state.page;
+      els.pages.textContent = pages;
+      els.prev.disabled = state.page <= 1;
+      els.next.disabled = state.page >= pages;
+    }
+
+    // --- Detail Sheet -------------------------------------------------------
+    let currentOrder = null;
+
+    function openOrder(o){
+      currentOrder = o;
+      els.sheetId.textContent = `#${o.id}`;
+      els.sheetStatus.className = 'badge ' + (o.status.toLowerCase());
+      els.sheetStatus.textContent = o.status;
+      els.sheetItems.innerHTML = '';
+      o.items.forEach(it => {
+        const row = document.createElement('div');
+        row.className = 'item';
+        row.innerHTML = `
+          <div>
+            <div><b>${it.name}</b></div>
+            <div class="muted">SKU: ${it.sku}</div>
+          </div>
+          <div>x${it.qty}</div>
+          <div>${fmt.format(it.price)}</div>
+          <div style="text-align:right">${fmt.format(it.price * it.qty)}</div>`;
+        els.sheetItems.appendChild(row);
+      });
+      els.sheetSubtotal.textContent = fmt.format(o.subtotal);
+      els.sheetShipping.textContent = fmt.format(o.shipping);
+      els.sheetTax.textContent = fmt.format(o.tax);
+      els.sheetTotal.textContent = fmt.format(o.total);
+      els.sheetKv.innerHTML = `
+        <div><span class="muted">Name</span><span>${o.customer.name}</span></div>
+        <div><span class="muted">Email</span><span>${o.customer.email}</span></div>
+        <div><span class="muted">Phone</span><span>${o.customer.phone}</span></div>
+        <div><span class="muted">Address</span><span>${o.customer.address}</span></div>
+        <div><span class="muted">Payment</span><span>${o.payment}</span></div>
+        <div><span class="muted">Fulfillment</span><span>${o.fulfillment}</span></div>
+        <div><span class="muted">Date</span><span>${dfmt.format(o.date)}</span></div>
+      `;
+      els.sheet.showModal();
+    }
+
+    els.close.addEventListener('click', () => els.sheet.close());
+    els.markPaid.addEventListener('click', () => {
+      if(!currentOrder) return;
+      currentOrder.status = 'Paid';
+      render();
+      openOrder(currentOrder);
+    });
+    els.markFulfilled.addEventListener('click', () => {
+      if(!currentOrder) return;
+      currentOrder.status = 'Fulfilled';
+      render();
+      openOrder(currentOrder);
+    });
+
+    // --- CSV Export ---------------------------------------------------------
+    function toCsv(rows){
+      const esc = (v) => '"' + String(v).replace(/"/g,'""') + '"';
+      const header = ['OrderID','Date','Customer','Status','Payment','Fulfillment','Total'];
+      const lines = [header.join(',')];
+      rows.forEach(o=>{
+        lines.push([
+          o.id,
+          dfmt.format(o.date),
+          o.customer.name,
+          o.status,
+          o.payment,
+          o.fulfillment,
+          o.total
+        ].map(esc).join(','));
+      });
+      return lines.join('\n');
+    }
+
+    function download(filename, text){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], {type:'text/csv'}));
+      a.download = filename;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    }
+
+    els.exportCsv.addEventListener('click', () => {
+      const filtered = sortOrders(allOrders.filter(matches));
+      download('orders.csv', toCsv(filtered));
+    });
+
+    els.newOrder.addEventListener('click', () => {
+      const o = makeOrder(1000 + allOrders.length);
+      // Mark the newest as Pending/Unfulfilled for variety
+      o.status = pick(['Pending','Unfulfilled']);
+      o.date = new Date();
+      allOrders.unshift(o);
+      state.page = 1;
+      render();
+    });
+
+    // --- Events -------------------------------------------------------------
+    els.search.addEventListener('input', e => { state.query = e.target.value; state.page = 1; render(); });
+    els.status.addEventListener('change', e => { state.status = e.target.value; state.page = 1; render(); });
+    els.from.addEventListener('change', e => { state.from = e.target.value; state.page = 1; render(); });
+    els.to.addEventListener('change', e => { state.to = e.target.value; state.page = 1; render(); });
+    els.sort.addEventListener('change', e => { state.sort = e.target.value; render(); });
+    els.clear.addEventListener('click', () => { state.query=''; state.status=''; state.from=''; state.to=''; state.sort='date_desc'; els.search.value=''; els.status.value=''; els.from.value=''; els.to.value=''; els.sort.value='date_desc'; render(); });
+
+    els.pageSize.addEventListener('change', e => { state.pageSize = +e.target.value; state.page = 1; render(); });
+    els.prev.addEventListener('click', () => { if(state.page>1){ state.page--; render(); }});
+    els.next.addEventListener('click', () => { state.page++; render(); });
+
+    // Keyboard close for dialog
+    window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && els.sheet.open){ els.sheet.close(); } });
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
