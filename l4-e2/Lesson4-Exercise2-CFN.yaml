@@ -350,6 +350,10 @@ Outputs:
     Description: ARN for ALB2
     Value: !Ref ALB2
 
-  ALBDNSName:
+  ALB1DNSName:
     Description: DNS Name of the Application Load Balancer for Orders
     Value: !Sub "http://${ALB1.DNSName}"
+
+  ALB2DNSName:
+    Description: DNS Name of the Application Load Balancer for Orders
+    Value: !Sub "http://${ALB2.DNSName}"
