@@ -1,0 +1,355 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Lesson4-Exercise2-VPC with public/private subnets, Internet Gateway,
+  and two EC2 instances (Orders and Billing) running Apache.
+  ALB1 fronts the OrdersInstance via Target Group 'orders'.
+  AMI pulled from SSM Parameter Store for Amazon Linux 2023.
+
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: SSM parameter for the latest Amazon Linux 2023 AMI (x86_64, kernel 6.1)
+
+Resources:
+
+  # -----------------------------
+  # Networking Setup
+  # -----------------------------
+  LessonVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Lesson4-Exercise2-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Lesson4-Exercise2-IGW
+
+  # -----------------------------
+  # NAT Gateway Setup
+  # -----------------------------
+  LabEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: LabEIP
+
+  LabNATGW:
+    Type: AWS::EC2::NatGateway
+    DependsOn: LabEIP
+    Properties:
+      AllocationId: !GetAtt LabEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: LabNATGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LessonVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LessonVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: Lesson4-Public-Subnet
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LessonVPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: Lesson4-Public-Subnet-2
+
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LessonVPC
+      Tags:
+        - Key: Name
+          Value: Lesson4-Public-RT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: LabNATGW
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref LabNATGW
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+  
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LessonVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: Lesson4-Private-Subnet
+  
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LessonVPC
+      Tags:
+        - Key: Name
+          Value: Lesson4-Private-RT
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  # -----------------------------
+  # Security Groups
+  # -----------------------------
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from ALB within VPC
+      VpcId: !Ref LessonVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Lesson4-Private-Instance-SG
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to the ALB
+      VpcId: !Ref LessonVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Lesson4-ALB-SG
+
+  # -----------------------------
+  # ALB1 and Target Group
+  # -----------------------------
+  OrdersTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: orders
+      VpcId: !Ref LessonVPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      Targets:
+        - Id: !Ref OrdersInstance
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: orders-tg
+
+  ALB1:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: LessonVPC
+    Properties:
+      Name: ALB1
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: ALB1
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ALB1
+    Properties:
+      LoadBalancerArn: !Ref ALB1
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref OrdersTargetGroup
+
+  # -----------------------------
+  # ALB2 and Target Group
+  # -----------------------------
+  BillingTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: billing
+      VpcId: !Ref LessonVPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      Targets:
+        - Id: !Ref BillingInstance
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: billing-tg
+
+  ALB2:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: LessonVPC
+    Properties:
+      Name: ALB2
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: ALB2
+
+  ALBListener2:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ALB2
+    Properties:
+      LoadBalancerArn: !Ref ALB2
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref BillingTargetGroup
+
+
+  # -----------------------------
+  # EC2 Instances
+  # -----------------------------
+  OrdersInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: ALB1
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: Orders
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf -y update
+          dnf -y install httpd
+          systemctl enable httpd
+          systemctl start httpd
+          curl -o /var/www/html/index.html \
+            https://raw.githubusercontent.com/udacity/cd14629-design-cost-optimized-architectures/main/l4-e2/orders/index.html
+          chown apache:apache /var/www/html/index.html
+          chmod 644 /var/www/html/index.html
+          mkdir /var/www/html/orders
+          cp /var/www/html/index.html /var/www/html/orders/index.html
+          systemctl restart httpd
+          echo Completed
+
+  BillingInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: ALB1
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: Billing
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          dnf -y update
+          dnf -y install httpd
+          systemctl enable httpd
+          systemctl start httpd
+          curl -o /var/www/html/index.html \
+            https://raw.githubusercontent.com/udacity/cd14629-design-cost-optimized-architectures/main/l4-e2/billing/index.html
+          chown apache:apache /var/www/html/index.html
+          chmod 644 /var/www/html/index.html
+          mkdir /var/www/html/billing
+          cp /var/www/html/index.html /var/www/html/billing/index.html
+          systemctl restart httpd
+
+# -----------------------------
+# Outputs
+# -----------------------------
+Outputs:
+  ALB1ARN:
+    Description: ARN for ALB1
+    Value: !Ref ALB1
+
+  ALB2ARN:
+    Description: ARN for ALB2
+    Value: !Ref ALB2
+
+  ALBDNSName:
+    Description: DNS Name of the Application Load Balancer for Orders
+    Value: !Sub "http://${ALB1.DNSName}"
