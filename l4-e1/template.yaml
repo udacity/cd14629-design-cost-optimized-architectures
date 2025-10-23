@@ -424,7 +424,7 @@ Resources:
               p.add_argument("--region", help="AWS region (e.g. ap-southeast-1)")
               p.add_argument("--endpoint", help="VPC endpoint DNS or full https URL for DynamoDB")
               args = p.parse_args()
-              run_write_load(args.table, args.rate, args.seconds, args.batch, not args.no-gsi, args.region, args.endpoint)
+              run_write_load(args.table, args.rate, args.seconds, args.batch, not args.no_gsi, args.region, args.endpoint)
           PY
 
           chmod 0755 /opt/ddbload/ddb-load-with-ep.py
